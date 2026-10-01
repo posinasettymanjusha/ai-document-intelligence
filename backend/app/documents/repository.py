@@ -43,6 +43,44 @@ class DocumentRepository:
         )
         return self._session.scalar(query) is not None
 
+    def search_chunks(
+        self,
+        *,
+        workspace_id: UUID,
+        user_id: UUID,
+        query_vector: list[float],
+        embedding_model: str,
+        top_k: int,
+        document_id: UUID | None = None,
+        version_id: UUID | None = None,
+    ) -> list[tuple[DocumentChunkRecord, Document, DocumentVersion, float]]:
+        distance = DocumentChunkRecord.embedding.cosine_distance(query_vector)
+        query = (
+            select(DocumentChunkRecord, Document, DocumentVersion, distance)
+            .join(
+                DocumentVersion,
+                DocumentVersion.id == DocumentChunkRecord.document_version_id,
+            )
+            .join(Document, Document.id == DocumentVersion.document_id)
+            .join(WorkspaceMember, WorkspaceMember.workspace_id == Document.workspace_id)
+            .where(
+                Document.workspace_id == workspace_id,
+                WorkspaceMember.user_id == user_id,
+                Document.deleted_at.is_(None),
+                DocumentChunkRecord.embedding_status == EmbeddingStatus.READY.value,
+                DocumentChunkRecord.embedding.is_not(None),
+                DocumentChunkRecord.embedding_model == embedding_model,
+            )
+            .order_by(distance.asc())
+            .limit(top_k)
+        )
+        if document_id is not None:
+            query = query.where(Document.id == document_id)
+        if version_id is not None:
+            query = query.where(DocumentVersion.id == version_id)
+
+        return list(self._session.execute(query).all())
+
     def claim_embedding_batch(
         self,
         version_id: UUID,

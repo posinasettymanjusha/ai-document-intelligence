@@ -90,7 +90,7 @@ Chunking is independent of routes, database implementation, and AI providers. De
 
 Embedding calls depend on the `EmbeddingProvider` interface (`embed_text` and `embed_texts`). `GeminiEmbeddingProvider` isolates the `google-genai` SDK and calls `gemini-embedding-2` with the configured `output_dimensionality` (768 by default). `EmbeddingService` validates count, dimension, and finite values. The local deterministic hash provider remains the default and needs no credentials; select `EMBEDDING_PROVIDER=gemini` and set the backend-only `GEMINI_API_KEY` to enable real calls. Provider errors are reduced to safe status messages before persistence; the API key and raw provider exception text are never stored or returned.
 
-Generation is explicitly invoked at `POST /api/v1/documents/{document_id}/versions/{version_id}/embeddings`; upload does not call the provider. The service claims bounded batches, marks them `processing`, calls the provider, validates the complete response, then persists each batch atomically as `ready`. Failed batches store a sanitized error and can be retried with `retry_failed: true`. Ready chunks are excluded from claims and protected from overwrite. No background worker or search endpoint is included.
+Generation is explicitly invoked at `POST /api/v1/documents/{document_id}/versions/{version_id}/embeddings`; upload does not call the provider. The service claims bounded batches, marks them `processing`, calls the provider, validates the complete response, then persists each batch atomically as `ready`. Failed batches store a sanitized error and can be retried with `retry_failed: true`. Ready chunks are excluded from claims and protected from overwrite. Semantic search embeds the query through the configured provider and ranks ready chunks with pgvector cosine distance. Search results are limited to the authenticated user's workspace and the current embedding model; the default local hash provider is deterministic plumbing, not a semantic model, so configure Gemini for meaningful semantic retrieval.
 
 Supabase Storage is accessed through an `ObjectStorage` integration using a backend-only service-role key. The bucket is private; the API does not return public object URLs. Tests override the repository and storage adapter with in-memory fakes, so live Supabase credentials are not required for the test suite.
 
@@ -101,6 +101,7 @@ API endpoints (each requires a valid Supabase Auth bearer token):
 - `GET /api/v1/documents/{document_id}` returns the document and its version extraction data.
 - `DELETE /api/v1/documents/{document_id}` removes the document and private file versions.
 - `POST /api/v1/documents/{document_id}/versions/{version_id}/embeddings` explicitly generates pending chunk embeddings; set `retry_failed` to retry failed chunks.
+- `POST /api/v1/workspaces/{workspace_id}/search` searches ready chunks in a workspace; provide `query`, optional `top_k` (1-50, default 10), and optional `document_id` and `version_id` filters.
 
 PDF extraction preserves 1-based page numbers, DOCX extraction preserves paragraph order/style and table-cell location, and TXT extraction preserves line ordering. Scanned PDFs without a text layer are rejected; TXT input must be UTF-8 (an optional UTF-8 BOM is accepted).
 
@@ -125,4 +126,4 @@ Frontend variables are documented in `frontend/.env.example`: `VITE_API_BASE_URL
 
 ## Current Scope
 
-This includes the Phase 1 foundation, Phase 2B persistence, Phase 2C chunking, Phase 3A vector infrastructure, and Phase 3B explicit embedding generation. Embeddings run synchronously only when requested. Search endpoints, RAG, document chat, reranking, hybrid search, and analytics remain out of scope.
+This includes the Phase 1 foundation, Phase 2B persistence, Phase 2C chunking, Phase 3A vector infrastructure, Phase 3B explicit embedding generation, and Phase 4 semantic vector search. Embeddings run synchronously only when explicitly requested. RAG, document chat, answer generation, reranking, hybrid search, and analytics remain out of scope.
