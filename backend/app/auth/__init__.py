@@ -1,0 +1,1 @@
+"""Supabase authentication integration boundaries."""

@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ai-document-intelligence-api"
+version = "0.1.0"
+description = "FastAPI foundation for the AI Document Intelligence platform"
+requires-python = ">=3.11"
+dependencies = [
+    "alembic>=1.14,<2.0",
+    "fastapi>=0.115,<1.0",
+    "google-genai>=2.26.0,<3.0",
+    "httpx>=0.27,<1.0",
+    "pgvector>=0.3.6,<1.0",
+    "pydantic-settings>=2.6,<3.0",
+    "PyJWT[crypto]>=2.10,<3.0",
+    "PyMuPDF>=1.24,<2.0",
+    "psycopg[binary]>=3.2,<4.0",
+    "python-multipart>=0.0.20,<1.0",
+    "python-docx>=1.1,<2.0",
+    "sqlalchemy>=2.0,<3.0",
+    "uvicorn[standard]>=0.32,<1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3,<9.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

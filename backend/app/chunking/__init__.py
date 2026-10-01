@@ -1,0 +1,1 @@
+"""Deterministic document chunking independent of persistence and providers."""
