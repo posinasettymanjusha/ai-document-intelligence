@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     embedding_provider: str = "local"
     embedding_model: str = "gemini-embedding-2"
     embedding_batch_size: int = Field(default=16, ge=1, le=100)
+    gemini_generation_model: str = "gemini-3.8-flash"
+    gemini_generation_timeout_seconds: int = Field(default=30, gt=0, le=300)
     gemini_api_key: SecretStr | None = None
     supabase_url: str | None = None
     supabase_service_role_key: str | None = None

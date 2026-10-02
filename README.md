@@ -1,6 +1,6 @@
 # AI Document Intelligence & RAG Platform
 
-A full-stack platform foundation for managing workspaces and interacting with documents using AI. Phase 3B adds an explicit Gemini embedding-generation operation while preserving a replaceable provider boundary. Embeddings are not generated during upload; search, RAG, document chat, reranking, and hybrid search are not implemented.
+A full-stack platform foundation for managing workspaces and interacting with documents using AI. Phase 5 adds grounded answers over the existing semantic search results. Embeddings are not generated during upload or answer requests except for the search query; conversational chat/history, reranking, and hybrid search are not implemented.
 
 ## Technology Stack
 
@@ -18,7 +18,7 @@ A full-stack platform foundation for managing workspaces and interacting with do
 ```text
 backend/
   app/
-    api/v1/routes/       Versioned health and document library endpoints
+    api/v1/routes/       Versioned health, document, search, and answer endpoints
     auth/                Supabase token verification and request identity
     core/                Settings, logging, and API error handling
     db/                  PostgreSQL session, ORM models, and declarative base
@@ -92,6 +92,8 @@ Embedding calls depend on the `EmbeddingProvider` interface (`embed_text` and `e
 
 Generation is explicitly invoked at `POST /api/v1/documents/{document_id}/versions/{version_id}/embeddings`; upload does not call the provider. The service claims bounded batches, marks them `processing`, calls the provider, validates the complete response, then persists each batch atomically as `ready`. Failed batches store a sanitized error and can be retried with `retry_failed: true`. Ready chunks are excluded from claims and protected from overwrite. Semantic search embeds the query through the configured provider and ranks ready chunks with pgvector cosine distance. Search results are limited to the authenticated user's workspace and the current embedding model; the default local hash provider is deterministic plumbing, not a semantic model, so configure Gemini for meaningful semantic retrieval.
 
+Grounded answers are available at `POST /api/v1/workspaces/{workspace_id}/answers`. The endpoint reuses semantic search, retrieves up to 5 chunks by default (request limit 1–10), and sends only those labeled excerpts to Gemini. Gemini is instructed to treat document text as untrusted evidence, answer only from that evidence, and cite factual claims with source labels. The API maps those labels to structured document, version, chunk, page, and source metadata; unknown labels are not returned. When search finds no chunks, or generation reports insufficient evidence, the API returns an explicit insufficient-context response without fabricated citations. Answer generation uses the server-side `GEMINI_API_KEY`, `GEMINI_GENERATION_MODEL` (`gemini-3.8-flash` by default), and `GEMINI_GENERATION_TIMEOUT_SECONDS` (30 by default). The generation model is separate from `EMBEDDING_MODEL`; no answers or conversation history are stored.
+
 Supabase Storage is accessed through an `ObjectStorage` integration using a backend-only service-role key. The bucket is private; the API does not return public object URLs. Tests override the repository and storage adapter with in-memory fakes, so live Supabase credentials are not required for the test suite.
 
 API endpoints (each requires a valid Supabase Auth bearer token):
@@ -102,6 +104,7 @@ API endpoints (each requires a valid Supabase Auth bearer token):
 - `DELETE /api/v1/documents/{document_id}` removes the document and private file versions.
 - `POST /api/v1/documents/{document_id}/versions/{version_id}/embeddings` explicitly generates pending chunk embeddings; set `retry_failed` to retry failed chunks.
 - `POST /api/v1/workspaces/{workspace_id}/search` searches ready chunks in a workspace; provide `query`, optional `top_k` (1-50, default 10), and optional `document_id` and `version_id` filters.
+- `POST /api/v1/workspaces/{workspace_id}/answers` returns a grounded answer and structured citations; provide `question`, optional `top_k` (1-10, default 5), and optional `document_id` and `version_id` filters.
 
 PDF extraction preserves 1-based page numbers, DOCX extraction preserves paragraph order/style and table-cell location, and TXT extraction preserves line ordering. Scanned PDFs without a text layer are rejected; TXT input must be UTF-8 (an optional UTF-8 BOM is accepted).
 
@@ -126,4 +129,4 @@ Frontend variables are documented in `frontend/.env.example`: `VITE_API_BASE_URL
 
 ## Current Scope
 
-This includes the Phase 1 foundation, Phase 2B persistence, Phase 2C chunking, Phase 3A vector infrastructure, Phase 3B explicit embedding generation, and Phase 4 semantic vector search. Embeddings run synchronously only when explicitly requested. RAG, document chat, answer generation, reranking, hybrid search, and analytics remain out of scope.
+This includes the Phase 1 foundation, Phase 2B persistence, Phase 2C chunking, Phase 3A vector infrastructure, Phase 3B explicit embedding generation, Phase 4 semantic vector search, and Phase 5 grounded document answers. Embeddings run synchronously only when explicitly requested, with query embeddings generated for search and answers. Conversational chat/history, reranking, hybrid search, and analytics remain out of scope.
