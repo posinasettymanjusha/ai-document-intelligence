@@ -28,6 +28,21 @@ class Settings(BaseSettings):
     conversation_max_history_characters: int = Field(default=12_000, ge=1_000, le=100_000)
     conversation_max_question_length: int = Field(default=8_000, ge=1, le=32_000)
     conversation_stale_pending_seconds: int = Field(default=300, ge=60, le=86_400)
+    document_analysis_max_chunks: int = Field(default=200, ge=1, le=2_000)
+    document_analysis_max_estimated_input_tokens: int = Field(
+        default=60_000,
+        ge=1_000,
+        le=1_000_000,
+    )
+    document_analysis_batch_estimated_tokens: int = Field(
+        default=6_000,
+        ge=256,
+        le=100_000,
+    )
+    document_analysis_max_provider_calls: int = Field(default=12, ge=1, le=100)
+    document_analysis_max_duration_seconds: int = Field(default=240, ge=10, le=3_600)
+    document_analysis_max_output_items: int = Field(default=40, ge=1, le=200)
+    document_analysis_max_output_tokens: int = Field(default=4_096, ge=256, le=32_768)
     gemini_api_key: SecretStr | None = None
     supabase_url: str | None = None
     supabase_service_role_key: str | None = None
@@ -45,6 +60,14 @@ class Settings(BaseSettings):
             raise ValueError(
                 "CONVERSATION_MAX_HISTORY_CHARACTERS must be at least "
                 "CONVERSATION_MAX_QUESTION_LENGTH"
+            )
+        if (
+            self.document_analysis_batch_estimated_tokens
+            > self.document_analysis_max_estimated_input_tokens
+        ):
+            raise ValueError(
+                "DOCUMENT_ANALYSIS_BATCH_ESTIMATED_TOKENS cannot exceed "
+                "DOCUMENT_ANALYSIS_MAX_ESTIMATED_INPUT_TOKENS"
             )
         api_key = self.gemini_api_key.get_secret_value().strip() if self.gemini_api_key else ""
         if self.embedding_provider == "gemini" and not api_key:

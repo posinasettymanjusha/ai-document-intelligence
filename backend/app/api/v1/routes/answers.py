@@ -18,14 +18,18 @@ router = APIRouter()
 
 
 def get_gemini_generation_provider() -> GeminiGenerationProvider:
-    def create_client() -> genai.Client:
+    def create_client(timeout_seconds: float | None = None) -> genai.Client:
         api_key = settings.gemini_api_key
         if api_key is None or not api_key.get_secret_value().strip():
             raise RuntimeError("Gemini generation is not configured")
+        timeout = min(
+            float(settings.gemini_generation_timeout_seconds),
+            timeout_seconds if timeout_seconds is not None else float("inf"),
+        )
         return genai.Client(
             api_key=api_key.get_secret_value(),
             http_options=types.HttpOptions(
-                timeout=settings.gemini_generation_timeout_seconds * 1000,
+                timeout=max(1, int(timeout * 1000)),
                 retry_options=types.HttpRetryOptions(attempts=1),
             ),
         )

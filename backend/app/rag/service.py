@@ -1,9 +1,9 @@
-import re
 from collections.abc import Sequence
 from typing import Protocol
 from uuid import UUID
 
 from app.core.errors import AppError
+from app.rag.citations import clean_answer_citations, make_grounded_citation
 from app.rag.schemas import (
     GeneratedAnswer,
     GroundedAnswerRequest,
@@ -14,7 +14,6 @@ from app.rag.schemas import (
 from app.search.schemas import SemanticSearchRequest, SemanticSearchResult
 from app.search.service import SemanticSearchService
 
-_SOURCE_LABEL = re.compile(r"\[(S\d+)\]")
 _INSUFFICIENT_ANSWER = "The provided documents do not contain enough information to answer this question."
 
 
@@ -124,12 +123,7 @@ class GroundedAnswerService:
         if generated.insufficient_context:
             return self._insufficient_response()
 
-        mentioned_labels = list(dict.fromkeys(_SOURCE_LABEL.findall(generated.answer)))
-        allowed_labels = [label for label in mentioned_labels if label in source_results]
-        answer = _SOURCE_LABEL.sub(
-            lambda match: match.group(0) if match.group(1) in source_results else "",
-            generated.answer,
-        ).strip()
+        answer, allowed_labels = clean_answer_citations(generated.answer, source_results)
         if not allowed_labels or not answer:
             return self._insufficient_response()
 
@@ -145,24 +139,7 @@ class GroundedAnswerService:
 
     @staticmethod
     def _citation(source_id: str, result: SemanticSearchResult) -> GroundedCitation:
-        metadata = dict(result.source_metadata)
-        raw_pages = metadata.get("page_numbers", [])
-        page_numbers = (
-            [page for page in raw_pages if isinstance(page, int) and not isinstance(page, bool)]
-            if isinstance(raw_pages, list)
-            else []
-        )
-        return GroundedCitation(
-            source_id=source_id,
-            document_id=result.document_id,
-            filename=result.filename,
-            version_id=result.version_id,
-            version_number=result.version_number,
-            chunk_id=result.chunk_id,
-            chunk_index=result.chunk_index,
-            page_numbers=page_numbers,
-            source_metadata=metadata,
-        )
+        return make_grounded_citation(source_id, result)
 
     @staticmethod
     def _insufficient_response() -> GroundedAnswerResponse:

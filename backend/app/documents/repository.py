@@ -4,7 +4,7 @@ from collections.abc import Sequence
 from uuid import UUID
 
 from sqlalchemy import delete, select
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session, load_only, selectinload
 
 from app.chunking.models import DocumentChunk
 from app.core.config import settings
@@ -86,6 +86,55 @@ class DocumentRepository:
             query = query.where(DocumentVersion.id == version_id)
 
         return list(self._session.execute(query).all())
+
+    def list_version_analysis_chunk_page(
+        self,
+        *,
+        workspace_id: UUID,
+        document_id: UUID,
+        version_id: UUID,
+        user_id: UUID,
+        after_chunk_index: int | None,
+        limit: int,
+    ) -> list[tuple[DocumentChunkRecord, Document, DocumentVersion]]:
+        if limit < 1:
+            raise ValueError("limit must be greater than zero")
+        query = (
+            select(DocumentChunkRecord, Document, DocumentVersion)
+            .options(
+                load_only(
+                    DocumentChunkRecord.id,
+                    DocumentChunkRecord.document_version_id,
+                    DocumentChunkRecord.chunk_index,
+                    DocumentChunkRecord.text,
+                    DocumentChunkRecord.estimated_token_count,
+                    DocumentChunkRecord.source_metadata,
+                )
+            )
+            .join(
+                DocumentVersion,
+                DocumentVersion.id == DocumentChunkRecord.document_version_id,
+            )
+            .join(Document, Document.id == DocumentVersion.document_id)
+            .join(WorkspaceMember, WorkspaceMember.workspace_id == Document.workspace_id)
+            .where(
+                Document.workspace_id == workspace_id,
+                Document.id == document_id,
+                DocumentVersion.id == version_id,
+                DocumentVersion.document_id == document_id,
+                Document.deleted_at.is_(None),
+                DocumentVersion.processing_status == DocumentProcessingStatus.READY.value,
+                WorkspaceMember.workspace_id == workspace_id,
+                WorkspaceMember.user_id == user_id,
+            )
+            .order_by(DocumentChunkRecord.chunk_index.asc())
+            .limit(limit)
+        )
+        if after_chunk_index is not None:
+            query = query.where(DocumentChunkRecord.chunk_index > after_chunk_index)
+        rows = list(self._session.execute(query).all())
+        self._session.commit()
+        return rows
 
     def has_scoped_conversation(self, document_id: UUID) -> bool:
         query = select(ConversationRecord.id).where(
