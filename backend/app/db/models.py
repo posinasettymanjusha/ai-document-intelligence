@@ -3,12 +3,15 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     String,
+    Text,
     UniqueConstraint,
     Uuid,
     func,
@@ -87,6 +90,7 @@ class Document(Base):
     __tablename__ = "documents"
     __table_args__ = (
         UniqueConstraint("workspace_id", "filename", name="uq_documents_workspace_filename"),
+        UniqueConstraint("workspace_id", "id", name="uq_documents_workspace_id_id"),
         CheckConstraint("file_type IN ('pdf', 'docx', 'txt')", name="ck_documents_file_type"),
         CheckConstraint(
             "processing_status IN ('uploaded', 'processing', 'ready', 'failed')",
@@ -125,6 +129,7 @@ class DocumentVersion(Base):
     __tablename__ = "document_versions"
     __table_args__ = (
         UniqueConstraint("document_id", "version_number", name="uq_document_versions_number"),
+        UniqueConstraint("document_id", "id", name="uq_document_versions_document_id_id"),
         UniqueConstraint("document_id", "checksum", name="uq_document_versions_checksum"),
         UniqueConstraint("storage_path", name="uq_document_versions_storage_path"),
         CheckConstraint("version_number > 0", name="ck_document_versions_positive_number"),
@@ -167,6 +172,108 @@ class DocumentVersion(Base):
         cascade="all, delete-orphan",
         order_by="DocumentChunkRecord.chunk_index",
     )
+
+
+class ConversationRecord(Base):
+    __tablename__ = "conversations"
+    __table_args__ = (
+        CheckConstraint(
+            "version_id IS NULL OR document_id IS NOT NULL",
+            name="ck_conversations_version_requires_document",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "document_id"],
+            ["documents.workspace_id", "documents.id"],
+            name="fk_conversations_workspace_document",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["document_id", "version_id"],
+            ["document_versions.document_id", "document_versions.id"],
+            name="fk_conversations_document_version",
+            ondelete="RESTRICT",
+        ),
+        Index(
+            "ix_conversations_workspace_owner_updated",
+            "workspace_id",
+            "owner_user_id",
+            "updated_at",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    workspace_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    owner_user_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("profiles.id", ondelete="CASCADE"), nullable=False
+    )
+    title: Mapped[str | None] = mapped_column(String(200))
+    document_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True))
+    version_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    messages: Mapped[list["ConversationMessageRecord"]] = relationship(
+        back_populates="conversation",
+        cascade="all, delete-orphan",
+        order_by="ConversationMessageRecord.sequence",
+        passive_deletes=True,
+    )
+
+
+class ConversationMessageRecord(Base):
+    __tablename__ = "conversation_messages"
+    __table_args__ = (
+        UniqueConstraint(
+            "conversation_id",
+            "sequence",
+            name="uq_conversation_messages_conversation_sequence",
+        ),
+        CheckConstraint("sequence > 0", name="ck_conversation_messages_positive_sequence"),
+        CheckConstraint("role IN ('user', 'assistant')", name="ck_conversation_messages_role"),
+        CheckConstraint(
+            "status IN ('pending', 'complete', 'failed')",
+            name="ck_conversation_messages_status",
+        ),
+        CheckConstraint("char_length(btrim(content)) > 0", name="ck_conversation_messages_content"),
+        CheckConstraint(
+            "(role = 'user' AND insufficient_context IS NULL AND citations = '[]'::jsonb) OR "
+            "(role = 'assistant' AND status = 'complete' AND insufficient_context IS NOT NULL)",
+            name="ck_conversation_messages_role_fields",
+        ),
+        Index(
+            "ix_conversation_messages_conversation_status",
+            "conversation_id",
+            "status",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    conversation_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("conversations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    sequence: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    role: Mapped[str] = mapped_column(String(16), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default=sql_text("'pending'")
+    )
+    citations: Mapped[list[dict[str, object]]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default=sql_text("'[]'::jsonb")
+    )
+    insufficient_context: Mapped[bool | None] = mapped_column(Boolean)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    conversation: Mapped[ConversationRecord] = relationship(back_populates="messages")
 
 
 class DocumentChunkRecord(Base):

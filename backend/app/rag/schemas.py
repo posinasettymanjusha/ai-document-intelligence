@@ -1,5 +1,7 @@
 from uuid import UUID
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
@@ -34,6 +36,11 @@ class GroundedAnswerResponse(BaseModel):
     answer: str
     insufficient_context: bool
     citations: list[GroundedCitation]
+
+
+class ConversationContextMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str
 
 
 class GeneratedAnswer(BaseModel):

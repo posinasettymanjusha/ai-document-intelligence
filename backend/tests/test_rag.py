@@ -122,6 +122,9 @@ class DeniedRepository:
     def rollback(self) -> None:
         return None
 
+    def commit(self) -> None:
+        return None
+
 
 def test_successful_retrieval_generates_answer_and_maps_citations() -> None:
     first = make_result()

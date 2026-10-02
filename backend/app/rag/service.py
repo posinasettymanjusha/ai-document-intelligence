@@ -1,4 +1,5 @@
 import re
+from collections.abc import Sequence
 from typing import Protocol
 from uuid import UUID
 
@@ -8,6 +9,7 @@ from app.rag.schemas import (
     GroundedAnswerRequest,
     GroundedAnswerResponse,
     GroundedCitation,
+    ConversationContextMessage,
 )
 from app.search.schemas import SemanticSearchRequest, SemanticSearchResult
 from app.search.service import SemanticSearchService
@@ -33,6 +35,7 @@ class AnswerGenerator(Protocol):
         self,
         question: str,
         sources: list[tuple[str, str]],
+        conversation_history: Sequence[ConversationContextMessage] = (),
     ) -> GeneratedAnswer: ...
 
 
@@ -51,11 +54,28 @@ class GroundedAnswerService:
         user_id: str,
         request: GroundedAnswerRequest,
     ) -> GroundedAnswerResponse:
+        return self.answer_with_context(
+            workspace_id,
+            user_id,
+            request,
+            retrieval_query=request.question,
+        )
+
+    def answer_with_context(
+        self,
+        workspace_id: UUID,
+        user_id: str,
+        request: GroundedAnswerRequest,
+        *,
+        conversation_history: Sequence[ConversationContextMessage] = (),
+        retrieval_query: str | None = None,
+    ) -> GroundedAnswerResponse:
+        query = retrieval_query or request.question
         search_results = self._search_service.search(
             workspace_id,
             user_id,
             SemanticSearchRequest(
-                query=request.question,
+                query=query,
                 top_k=request.top_k,
                 document_id=request.document_id,
                 version_id=request.version_id,
@@ -74,7 +94,14 @@ class GroundedAnswerService:
         ]
 
         try:
-            generated = self._answer_generator.generate(request.question, labeled_sources)
+            if conversation_history:
+                generated = self._answer_generator.generate(
+                    request.question,
+                    labeled_sources,
+                    conversation_history,
+                )
+            else:
+                generated = self._answer_generator.generate(request.question, labeled_sources)
         except AnswerGenerationTimeout as error:
             raise AppError(
                 504,

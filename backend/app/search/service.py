@@ -30,6 +30,7 @@ class SemanticSearchService:
 
         try:
             allowed = self._repository.is_workspace_member(workspace_id, user_uuid)
+            self._repository.commit()
         except SQLAlchemyError as error:
             self._repository.rollback()
             raise AppError(
@@ -59,6 +60,7 @@ class SemanticSearchService:
                 document_id=request.document_id,
                 version_id=request.version_id,
             )
+            self._repository.commit()
         except SQLAlchemyError as error:
             self._repository.rollback()
             raise AppError(

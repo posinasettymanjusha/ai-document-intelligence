@@ -166,6 +166,12 @@ class DocumentLibraryService:
             self._not_found()
 
         try:
+            if self._repository.has_scoped_conversation(document.id):
+                raise AppError(
+                    409,
+                    "document_conversation_scope_conflict",
+                    "Delete document-scoped conversations before deleting this document.",
+                )
             if document.deleted_at is None:
                 self._repository.soft_delete(document)
             paths = {version.storage_path for version in document.versions}

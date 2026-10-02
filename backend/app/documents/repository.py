@@ -8,7 +8,13 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.chunking.models import DocumentChunk
 from app.core.config import settings
-from app.db.models import Document, DocumentChunkRecord, DocumentVersion, WorkspaceMember
+from app.db.models import (
+    ConversationRecord,
+    Document,
+    DocumentChunkRecord,
+    DocumentVersion,
+    WorkspaceMember,
+)
 from app.embeddings.models import EmbeddingResult, EmbeddingStatus
 from app.documents.models import DocumentProcessingStatus, ProcessedDocument
 
@@ -80,6 +86,14 @@ class DocumentRepository:
             query = query.where(DocumentVersion.id == version_id)
 
         return list(self._session.execute(query).all())
+
+    def has_scoped_conversation(self, document_id: UUID) -> bool:
+        query = select(ConversationRecord.id).where(
+            ConversationRecord.document_id == document_id
+        )
+        exists = self._session.scalar(query) is not None
+        self._session.commit()
+        return exists
 
     def claim_embedding_batch(
         self,
@@ -274,6 +288,9 @@ class DocumentRepository:
 
     def rollback(self) -> None:
         self._session.rollback()
+
+    def commit(self) -> None:
+        self._session.commit()
 
     def mark_embedding_processing(self, chunk_id: UUID, model_id: str) -> DocumentChunkRecord:
         chunk = self._get_chunk_for_update(chunk_id)

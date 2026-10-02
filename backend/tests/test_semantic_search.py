@@ -52,9 +52,11 @@ class FakeProvider:
 
     def __init__(self) -> None:
         self.queries: list[str] = []
+        self.events: list[str] = []
 
     def embed_text(self, text: str) -> list[float]:
         self.queries.append(text)
+        self.events.append("embed")
         return [1.0] + [0.0] * (self.dimension - 1)
 
     def embed_texts(self, texts: list[str]) -> list[list[float]]:
@@ -65,6 +67,7 @@ class FakeRepository:
     def __init__(self, allowed: bool = True) -> None:
         self.allowed = allowed
         self.search_arguments: dict[str, Any] | None = None
+        self.events: list[str] = []
         self.matches = [
             (
                 FakeChunk(
@@ -91,14 +94,19 @@ class FakeRepository:
         ]
 
     def is_workspace_member(self, workspace_id: UUID, user_id: UUID) -> bool:
+        self.events.append("membership")
         return self.allowed and workspace_id == WORKSPACE_ID and user_id == USER_ID
 
     def search_chunks(self, **kwargs: Any) -> list[tuple[FakeChunk, FakeDocument, FakeVersion, float]]:
+        self.events.append("search")
         self.search_arguments = kwargs
         return self.matches
 
     def rollback(self) -> None:
         return None
+
+    def commit(self) -> None:
+        self.events.append("commit")
 
 
 @dataclass
@@ -112,6 +120,7 @@ class SearchFixture:
 def search_fixture() -> SearchFixture:
     repository = FakeRepository()
     provider = FakeProvider()
+    repository.events = provider.events
     service = SemanticSearchService(repository, EmbeddingService(provider))  # type: ignore[arg-type]
     return SearchFixture(service, repository, provider)
 
@@ -142,6 +151,13 @@ def test_search_embeds_query_and_returns_ranked_scores_and_source_metadata(
     assert result[0].version_number == 4
     assert result[0].chunk_index == 1
     assert result[0].source_metadata["page_numbers"] == [2]
+    assert search_fixture.provider.events == [
+        "membership",
+        "commit",
+        "embed",
+        "search",
+        "commit",
+    ]
 
 
 def test_search_rejects_non_member_before_embedding() -> None:

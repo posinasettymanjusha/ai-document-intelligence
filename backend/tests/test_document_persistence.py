@@ -28,6 +28,7 @@ class MemoryRepository:
         self.chunks: dict[UUID, list[DocumentChunk]] = {}
         self.members = {(WORKSPACE_ID, USER_ID)}
         self.fail_start = False
+        self.scoped_documents: set[UUID] = set()
 
     def is_workspace_member(self, workspace_id: UUID, user_id: UUID) -> bool:
         return (workspace_id, user_id) in self.members
@@ -152,6 +153,9 @@ class MemoryRepository:
     def delete(self, document: Document) -> None:
         self.documents.pop(document.id)
 
+    def has_scoped_conversation(self, document_id: UUID) -> bool:
+        return document_id in self.scoped_documents
+
     def rollback(self) -> None:
         return None
 
@@ -243,6 +247,23 @@ def test_document_deletion_removes_object_and_database_record(
 
     assert created.id not in repository.documents
     assert path not in storage.objects
+
+
+def test_document_scope_conflict_is_checked_before_storage_deletion(
+    persistence: tuple[DocumentLibraryService, MemoryRepository, MemoryStorage],
+) -> None:
+    service, repository, storage = persistence
+    created = upload(service)
+    repository.scoped_documents.add(created.id)
+    saved_objects = dict(storage.objects)
+
+    with pytest.raises(AppError) as error:
+        service.delete_document(created.id, str(USER_ID))
+
+    assert error.value.status_code == 409
+    assert error.value.code == "document_conversation_scope_conflict"
+    assert storage.objects == saved_objects
+    assert created.id in repository.documents
 
 
 def test_workspace_isolation_rejects_upload_before_storage_write(

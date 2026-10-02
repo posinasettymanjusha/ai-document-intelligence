@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     embedding_batch_size: int = Field(default=16, ge=1, le=100)
     gemini_generation_model: str = "gemini-3.8-flash"
     gemini_generation_timeout_seconds: int = Field(default=30, gt=0, le=300)
+    conversation_max_history_turns: int = Field(default=8, ge=1, le=50)
+    conversation_max_history_characters: int = Field(default=12_000, ge=1_000, le=100_000)
+    conversation_max_question_length: int = Field(default=8_000, ge=1, le=32_000)
+    conversation_stale_pending_seconds: int = Field(default=300, ge=60, le=86_400)
     gemini_api_key: SecretStr | None = None
     supabase_url: str | None = None
     supabase_service_role_key: str | None = None
@@ -37,6 +41,11 @@ class Settings(BaseSettings):
             raise ValueError("DOCUMENT_MINIMUM_CHUNK_SIZE cannot exceed DOCUMENT_CHUNK_SIZE")
         if self.embedding_provider not in {"local", "gemini"}:
             raise ValueError("EMBEDDING_PROVIDER must be 'local' or 'gemini'")
+        if self.conversation_max_history_characters < self.conversation_max_question_length:
+            raise ValueError(
+                "CONVERSATION_MAX_HISTORY_CHARACTERS must be at least "
+                "CONVERSATION_MAX_QUESTION_LENGTH"
+            )
         api_key = self.gemini_api_key.get_secret_value().strip() if self.gemini_api_key else ""
         if self.embedding_provider == "gemini" and not api_key:
             raise ValueError("GEMINI_API_KEY is required when EMBEDDING_PROVIDER=gemini")

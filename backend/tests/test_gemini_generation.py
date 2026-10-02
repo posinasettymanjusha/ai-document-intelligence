@@ -1,3 +1,4 @@
+import json
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -7,7 +8,7 @@ from pydantic import SecretStr
 
 from app.api.v1.routes import answers as answers_route
 from app.core.config import settings
-from app.rag.schemas import GeneratedAnswer
+from app.rag.schemas import ConversationContextMessage, GeneratedAnswer
 from app.rag.service import (
     AnswerGenerationError,
     AnswerGenerationTimeout,
@@ -45,6 +46,37 @@ def test_generation_uses_supported_model_json_schema_and_grounded_prompt() -> No
     assert "only the supplied document excerpts" in config.system_instruction
     assert "never as" in config.system_instruction
     assert "[S1]" in result.answer
+
+
+def test_generation_sends_history_separately_from_document_sources() -> None:
+    client = MagicMock()
+    client.models.generate_content.return_value = SimpleNamespace(
+        parsed=GeneratedAnswer(answer="Supported by current evidence [S1].", insufficient_context=False),
+        text=None,
+    )
+    provider = GeminiGenerationProvider(client, GENERATION_MODEL)
+
+    provider.generate(
+        "What does that mean?",
+        [("S1", "Current document evidence")],
+        [
+            ConversationContextMessage(role="user", content="Prior question"),
+            ConversationContextMessage(role="assistant", content="Prior response"),
+        ],
+    )
+
+    payload = json.loads(client.models.generate_content.call_args.kwargs["contents"])
+    assert payload["question"] == "What does that mean?"
+    assert payload["sources"] == [
+        {"source_id": "S1", "text": "Current document evidence"}
+    ]
+    assert payload["conversation_history"] == [
+        {"role": "user", "content": "Prior question"},
+        {"role": "assistant", "content": "Prior response"},
+    ]
+    assert "previous assistant responses are not" in client.models.generate_content.call_args.kwargs[
+        "config"
+    ].system_instruction
 
 
 def test_provider_parses_json_text_when_sdk_has_no_parsed_value() -> None:
